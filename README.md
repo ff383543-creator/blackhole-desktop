@@ -24,8 +24,8 @@ Start with Windows: right-click the tray icon, then "Запускать вмес
 | Drop a file near the hole (within about 2.4 shadow radii) | The icon spirals in and the file is moved to the Recycle Bin |
 | Double-click the hole | Opens the Recycle Bin |
 | Move the cursor close to the hole | The real arrow is hidden and a distorted copy is drawn instead, swirling and shrinking into the hole |
-| Press **O** on the desktop (or tray menu) | The hole starts slowly pulling **all desktop icons** toward itself (they stop in a ring around it, nothing is deleted) |
-| Press **P** on the desktop (or **Ctrl+Alt+P** anywhere) | Stops it and puts every icon back where it was |
+| Press **O** on the desktop (or tray menu) | The hole starts slowly pulling **all desktop icons** toward itself (they stop in a ring around it, nothing is deleted). The taskbar is swallowed too: a snapshot of it is torn into pieces that spiral into the hole while the real taskbar is hidden |
+| Press **P** on the desktop (or **Ctrl+Alt+P** anywhere) | Stops it, puts every icon back and brings the taskbar back |
 | Reboot / quit the program | Icons are put back automatically (also on the next start if the PC was shut down mid-effect) |
 | Any open application window | The hole freezes and uses almost no CPU; it comes back to life on a clear desktop |
 
@@ -33,6 +33,7 @@ Tray menu (labels are in Russian): open the Recycle Bin, empty the Recycle Bin (
 
 ## What it changes on your computer
 
+- During the swallow effect it hides the real taskbar (`ShowWindow`, not a setting). It is brought back by key P, on quit, at logoff, on the next start, or with `restore.cmd`.
 - Hides the "Recycle Bin" desktop icon (registry `HKCU\...\Explorer\HideDesktopIcons`). Quitting from the tray menu brings the icon back.
 - While the cursor is inside the hole's zone, it temporarily replaces the system cursors with blank ones. They are restored when you leave the zone, when the app exits, and on the next start.
 - Settings (position, size) are stored in `%APPDATA%\BlackHole\settings.ini`.

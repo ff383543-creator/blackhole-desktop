@@ -14,8 +14,11 @@ namespace BlackHole
 {
     public sealed class OverlayForm : Form
     {
-        public OverlayForm()
+        bool topmost;
+        public OverlayForm() : this(false) { }
+        public OverlayForm(bool topmost)
         {
+            this.topmost = topmost;
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
@@ -29,6 +32,7 @@ namespace BlackHole
             {
                 CreateParams cp = base.CreateParams;
                 cp.ExStyle |= 0x00080000 | 0x00000020 | 0x00000080 | 0x08000000; // LAYERED|TRANSPARENT|TOOLWINDOW|NOACTIVATE
+                if (topmost) cp.ExStyle |= 0x00000008;
                 return cp;
             }
         }
@@ -69,6 +73,7 @@ namespace BlackHole
         List<Falling> falling = new List<Falling>();
         long lastTick;
 
+        TaskbarFx fx; bool taskbarFx = true;
         bool drift, snapOff, snapWasOn, snapKnown, restorePending; long lastDriftMs;
         Dictionary<string, double[]> drifted = new Dictionary<string, double[]>();
         Dictionary<string, PT> origins = new Dictionary<string, PT>();
@@ -105,6 +110,8 @@ namespace BlackHole
             hook = Native.SetWindowsHookEx(14, hookProc, Native.GetModuleHandle(null), 0);
             kbProc = new HookProc(KeyProc);
             kbHook = Native.SetWindowsHookEx(13, kbProc, Native.GetModuleHandle(null), 0);
+            TaskbarFx.RestoreIfLeftHidden();
+            AppDomain.CurrentDomain.ProcessExit += delegate { if (fx != null) TaskbarFx.ShowTaskbar(); };
             LoadOrigins();
             System.Windows.Forms.Timer keyTimer = new System.Windows.Forms.Timer();
             keyTimer.Interval = 40; keyTimer.Tick += delegate { PollKeys(); }; keyTimer.Start();
@@ -547,13 +554,20 @@ namespace BlackHole
         {
             if (drift) return;
             drift = true; lastDriftMs = 0;
+            if (taskbarFx && fx == null)
+            {
+                try { TaskbarFx f = new TaskbarFx(); if (f.Start(cx, cy, shadow)) { fx = f; Log.Write("taskbar swallow started"); } }
+                catch (Exception ex) { Log.Write("taskbar fx failed: " + ex); TaskbarFx.ShowTaskbar(); }
+            }
             Log.Write("swallow started");
         }
 
         void StopDrift()
         {
-            if (!drift && origins.Count == 0) return;
+            if (!drift && origins.Count == 0 && fx == null) return;
             drift = false;
+            if (driftCache != null) { DesktopView.Free(driftCache); driftCache = null; }
+            if (fx != null) { try { fx.Stop(); } catch (Exception) { TaskbarFx.ShowTaskbar(); } fx = null; Log.Write("taskbar restored"); }
             try { RestoreOrigins(); } catch (Exception) { dv = null; }
             if (rend != null) rend.Flare = 0.7f;
             Log.Write("swallow stopped, icons restored");
@@ -587,36 +601,46 @@ namespace BlackHole
         void DriftStep(long now)
         {
             if (!drift || dv == null || falling.Count > 0 || leftDown || upPending || rend == null) return;
-            if (now - lastDriftMs < 250) return;
+            if (now - lastDriftMs < 40) return; // ~25 moves per second: smooth
             double dts = (now - lastDriftMs) / 1000.0; lastDriftMs = now;
-            if (dts > 1) dts = 0.25;
+            if (dts > 0.25) dts = 0.04;
             if (dv.AutoArrange) return;
             SetSnap(true);
             double speed = 30.0 * dpi, rmin = shadow * 1.9;
-            List<DesktopItem> items = dv.Items();
-            List<IntPtr> ps = new List<IntPtr>(); List<PT> pts = new List<PT>();
-            bool newOrigin = false;
-            foreach (DesktopItem it in items)
+
+            // listing the desktop is the slow part: refresh it every 2 s, in between move the cached items
+            if (driftCache == null || now - driftCacheMs > 2000)
             {
-                if (it.Path.StartsWith("::") || it.Path.Length <= 3) continue;
-                double fx = it.X, fy = it.Y;
-                double[] last;
-                if (drifted.TryGetValue(it.Path, out last) && Math.Abs(last[0] - it.X) <= 3 && Math.Abs(last[1] - it.Y) <= 3) { fx = last[0]; fy = last[1]; }
-                if (!origins.ContainsKey(it.Path)) { PT o = new PT(); o.X = it.X; o.Y = it.Y; origins[it.Path] = o; newOrigin = true; }
-                double dx = cx - (fx + dv.Spacing.X / 2.0), dy = cy - (fy + dv.Spacing.Y / 2.0);
+                if (driftCache != null) DesktopView.Free(driftCache);
+                driftCache = dv.Items(); driftCacheMs = now;
+                bool newOrigin = false;
+                foreach (DesktopItem it in driftCache)
+                {
+                    if (it.Path.StartsWith("::") || it.Path.Length <= 3) continue;
+                    double[] last;
+                    if (drifted.TryGetValue(it.Path, out last) && Math.Abs(last[0] - it.X) <= 6 && Math.Abs(last[1] - it.Y) <= 6) continue; // still ours
+                    drifted[it.Path] = new double[] { it.X, it.Y }; // new item, or the user moved it
+                    if (!origins.ContainsKey(it.Path)) { PT o = new PT(); o.X = it.X; o.Y = it.Y; origins[it.Path] = o; newOrigin = true; }
+                }
+                if (newOrigin) SaveOrigins(); // saved BEFORE moving so a crash or reboot can always restore
+            }
+            List<IntPtr> ps = new List<IntPtr>(); List<PT> pts = new List<PT>();
+            foreach (DesktopItem it in driftCache)
+            {
+                double[] cur;
+                if (!drifted.TryGetValue(it.Path, out cur)) continue;
+                double dx = cx - (cur[0] + dv.Spacing.X / 2.0), dy = cy - (cur[1] + dv.Spacing.Y / 2.0);
                 double r = Math.Sqrt(dx * dx + dy * dy);
                 if (r <= rmin) continue;
                 double step = speed * dts * (1 + Math.Min(2.0, shadow * 4 / r));
                 double ux = dx / r, uy = dy / r;
-                double nx = fx + ux * step - uy * step * 0.35, ny = fy + uy * step + ux * step * 0.35;
-                drifted[it.Path] = new double[] { nx, ny };
-                PT np = new PT(); np.X = (int)Math.Round(nx); np.Y = (int)Math.Round(ny);
+                cur[0] += ux * step - uy * step * 0.35; cur[1] += uy * step + ux * step * 0.35;
+                PT np = new PT(); np.X = (int)Math.Round(cur[0]); np.Y = (int)Math.Round(cur[1]);
                 ps.Add(it.Pidl); pts.Add(np);
             }
-            if (newOrigin) SaveOrigins(); // saved BEFORE moving so a crash or reboot can always restore
             dv.SetPositions(ps, pts);
-            DesktopView.Free(items);
         }
+        List<DesktopItem> driftCache; long driftCacheMs;
 
         IntPtr KeyProc(int code, IntPtr w, IntPtr l)
         {
@@ -731,6 +755,7 @@ namespace BlackHole
                 try { if (RestoreOrigins() || ++restoreTries >= 40) restorePending = false; }
                 catch (Exception ex) { Log.Write("restore failed: " + ex); dv = null; if (++restoreTries >= 40) restorePending = false; }
             }
+            if (fx != null && !fx.Finished) { int sw2 = fx.Tick(now); if (sw2 > 0 && rend != null) rend.Flare = Math.Max(rend.Flare, 0.35f); }
             if (falling.Count > 0) UpdateFalling();
             try { DriftStep(now); } catch (Exception) { dv = null; }
 
@@ -740,7 +765,7 @@ namespace BlackHole
                 Native.SetWindowPos(form.Handle, Native.HWND_BOTTOM, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
                 if (dv == null) dv = DesktopView.Open();
             }
-            if (now - lastOccMs > 300) { lastOccMs = now; bool wasCovered = covered; covered = IsCovered(); if (covered != wasCovered) Log.Write(covered ? "paused: an app window is open" : "running: desktop is clear"); timer.Interval = covered ? 250 : 20; }
+            if (now - lastOccMs > 300) { lastOccMs = now; bool wasCovered = covered; covered = IsCovered(); if (covered != wasCovered) Log.Write(covered ? "paused: an app window is open" : "running: desktop is clear"); timer.Interval = (covered && !drift && (fx == null || fx.Finished)) ? 250 : 20; }
 
             if (rend == null) return;
 
@@ -830,6 +855,7 @@ namespace BlackHole
             Native.SetProcessDpiAwarenessContext(new IntPtr(-4));
             AppDomain.CurrentDomain.UnhandledException += delegate(object o, UnhandledExceptionEventArgs ea)
             {
+                TaskbarFx.ShowTaskbar();
                 Log.Write("CRASH: " + ea.ExceptionObject);
                 MessageBox.Show("BlackHole crashed. Details: " + Log.Path + "\n\n" + ea.ExceptionObject, "BlackHole");
             };
@@ -861,7 +887,7 @@ namespace BlackHole
                 foreach (DesktopItem it in d.Items()) Console.WriteLine(it.X + "," + it.Y + "  " + it.Path);
                 return 0;
             }
-            if (a.Contains("--restore")) { Native.RestoreSystemCursors(); HoleApp.SetRecycleHidden(false); return 0; }
+            if (a.Contains("--restore")) { TaskbarFx.ShowTaskbar(); Native.RestoreSystemCursors(); HoleApp.SetRecycleHidden(false); return 0; }
             if (a.Contains("--hide")) { HoleApp.SetRecycleHidden(true); return 0; }
             int di = a.IndexOf("--dump");
             if (di >= 0) return Dump.Run(a, di);

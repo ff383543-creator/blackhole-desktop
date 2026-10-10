@@ -9,7 +9,7 @@ if not exist "%CSC%" (
   exit /b 1
 )
 taskkill /im BlackHole.exe /f >nul 2>&1
-"%CSC%" /nologo /platform:x64 /optimize+ /target:winexe /out:BlackHole.exe /r:System.Drawing.dll /r:System.Windows.Forms.dll Native.cs ShellDesktop.cs Lens.cs Renderer.cs Program.cs
+"%CSC%" /nologo /platform:x64 /optimize+ /target:winexe /out:BlackHole.exe /r:System.Drawing.dll /r:System.Windows.Forms.dll Native.cs ShellDesktop.cs Lens.cs Renderer.cs TaskbarFx.cs Program.cs
 if errorlevel 1 (
   echo.
   echo BUILD FAILED - copy the error above and send it to the author.

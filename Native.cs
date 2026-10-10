@@ -125,6 +125,8 @@ namespace BlackHole
 
         [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vk);
 
+        [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+
         public static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
 
         public static bool RecycleFile(string path)
