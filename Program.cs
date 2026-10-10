@@ -606,7 +606,7 @@ namespace BlackHole
             if (dts > 0.25) dts = 0.04;
             if (dv.AutoArrange) return;
             SetSnap(true);
-            double speed = 30.0 * dpi, rmin = shadow * 1.9;
+            double speed = 90.0 * dpi, rmin = shadow * 0.3; // icons plunge into the shadow and are parked there (hidden), never deleted
 
             // listing the desktop is the slow part: refresh it every 2 s, in between move the cached items
             if (driftCache == null || now - driftCacheMs > 2000)
@@ -632,7 +632,7 @@ namespace BlackHole
                 double dx = cx - (cur[0] + dv.Spacing.X / 2.0), dy = cy - (cur[1] + dv.Spacing.Y / 2.0);
                 double r = Math.Sqrt(dx * dx + dy * dy);
                 if (r <= rmin) continue;
-                double step = speed * dts * (1 + Math.Min(2.0, shadow * 4 / r));
+                double step = speed * dts * (1 + Math.Min(4.0, shadow * 6 / r));
                 double ux = dx / r, uy = dy / r;
                 cur[0] += ux * step - uy * step * 0.35; cur[1] += uy * step + ux * step * 0.35;
                 PT np = new PT(); np.X = (int)Math.Round(cur[0]); np.Y = (int)Math.Round(cur[1]);
