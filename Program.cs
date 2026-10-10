@@ -83,7 +83,7 @@ namespace BlackHole
             form = new OverlayForm();
             form.Show();
             if (Environment.GetEnvironmentVariable("BH_NOAFFINITY") != "1")
-                Native.SetWindowDisplayAffinity(form.Handle, 0x11);
+                Log.Write("display affinity (exclude from capture): " + Native.SetWindowDisplayAffinity(form.Handle, 0x11));
             Native.SetWindowPos(form.Handle, Native.HWND_BOTTOM, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
 
             Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal;
@@ -92,11 +92,14 @@ namespace BlackHole
             ICONINFO aii; if (Native.GetIconInfo(arrow, out aii)) arrowHot = aii.xHot;
             SetRecycleHidden(true);
             dv = DesktopView.Open();
+            Log.Write("desktop view (icons via COM): " + (dv != null ? "ok" : "FAILED"));
             LoadSettings();
+            Log.Write("dpi=" + dpi + " screen=" + Native.GetSystemMetrics(0) + "x" + Native.GetSystemMetrics(1) + " hole center=" + cx + "," + cy + " scale=" + scale);
             BuildTray();
 
             hookProc = new HookProc(MouseProc);
             hook = Native.SetWindowsHookEx(14, hookProc, Native.GetModuleHandle(null), 0);
+            Log.Write("mouse hook: " + (hook != IntPtr.Zero ? "ok" : "FAILED"));
 
             timer = new System.Windows.Forms.Timer();
             timer.Interval = 10;
@@ -196,7 +199,9 @@ namespace BlackHole
             float sh = shadow;
             ThreadPool.QueueUserWorkItem(delegate(object o)
             {
+                Stopwatch lsw = Stopwatch.StartNew();
                 LensTable t = LensTable.Build(R, sh);
+                Log.Write("lens built: " + lsw.ElapsedMilliseconds + " ms, size " + t.N);
                 try
                 {
                     form.BeginInvoke(new MethodInvoker(delegate
@@ -248,6 +253,7 @@ namespace BlackHole
             m.MenuItems.Add("Переместить в позицию курсора (через 3 сек)", delegate { MoveHere(); });
             miAuto = new MenuItem("Запускать вместе с Windows", delegate { ToggleAutostart(); });
             m.MenuItems.Add(miAuto);
+            m.MenuItems.Add("Открыть журнал (для диагностики)", delegate { try { Process.Start("notepad.exe", Log.Path); } catch (Exception) { } });
             m.MenuItems.Add("-");
             m.MenuItems.Add("Выход (вернуть значок корзины)", delegate { Quit(); });
             m.Popup += delegate { miAuto.Checked = IsAutostart(); UpdateSizeChecks(); };
@@ -524,7 +530,7 @@ namespace BlackHole
                 Native.SetWindowPos(form.Handle, Native.HWND_BOTTOM, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
                 if (dv == null) dv = DesktopView.Open();
             }
-            if (now - lastOccMs > 300) { lastOccMs = now; covered = IsCovered(); timer.Interval = covered ? 250 : 20; }
+            if (now - lastOccMs > 300) { lastOccMs = now; bool wasCovered = covered; covered = IsCovered(); if (covered != wasCovered) Log.Write(covered ? "paused: an app window is open" : "running: desktop is clear"); timer.Interval = covered ? 250 : 20; }
 
             if (rend == null) return;
 
@@ -561,6 +567,7 @@ namespace BlackHole
             rend.ArrowCursor = arrow; rend.ArrowHot = arrowHot;
             // draw at least one frame even if windows are open; after that a covered hole stays frozen
             if (covered && firstFrameDone && Environment.GetEnvironmentVariable("BH_FORCE") != "1") return;
+            if (!firstFrameDone) Log.Write("first frame drawn");
             firstFrameDone = true;
 
             int x0 = cx - rend.L.R, y0 = cy - rend.L.R;
@@ -589,12 +596,36 @@ namespace BlackHole
         }
     }
 
+    public static class Log
+    {
+        public static readonly string Path = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BlackHole", "log.txt");
+        public static void Write(string msg)
+        {
+            try
+            {
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path));
+                FileInfo fi = new FileInfo(Path);
+                if (fi.Exists && fi.Length > 200000) fi.Delete();
+                File.AppendAllText(Path, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n");
+            }
+            catch (Exception) { }
+        }
+    }
+
     static class Program
     {
         [STAThread]
         static int Main(string[] args)
         {
             Native.SetProcessDpiAwarenessContext(new IntPtr(-4));
+            AppDomain.CurrentDomain.UnhandledException += delegate(object o, UnhandledExceptionEventArgs ea)
+            {
+                Log.Write("CRASH: " + ea.ExceptionObject);
+                MessageBox.Show("BlackHole crashed. Details: " + Log.Path + "\n\n" + ea.ExceptionObject, "BlackHole");
+            };
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += delegate(object o, System.Threading.ThreadExceptionEventArgs ea) { Log.Write("ERROR: " + ea.Exception); };
+            Log.Write("start " + Environment.OSVersion + " x64=" + Environment.Is64BitProcess + " args=" + string.Join(" ", args));
             List<string> a = new List<string>(args);
             if (a.Contains("--quit"))
             {

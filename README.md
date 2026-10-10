@@ -35,6 +35,12 @@ Tray menu (labels are in Russian): open the Recycle Bin, empty the Recycle Bin (
 - Settings (position, size) are stored in `%APPDATA%\BlackHole\settings.ini`.
 - Installs a global mouse hook (needed for the double-click and for detecting drags). It records nothing and sends nothing anywhere.
 
+## If nothing appears
+
+1. The hole only lives on a **clear desktop**: minimize or close all windows (Win+D). With any window open it freezes and is hidden under it.
+2. Look for the black-hole icon in the system tray (click the ^ arrow). Right-click it, then **Открыть журнал** (Open log), or open `%APPDATA%\BlackHole\log.txt`. It lists every startup step and any error; send it to the author.
+3. `build.cmd` builds and starts the program and stays open so you can read errors. It needs 64-bit Windows 10 (2004+) / 11.
+
 ## If something goes wrong
 
 Run `restore.cmd`: it closes the app, brings back the Recycle Bin icon and the normal cursors.
