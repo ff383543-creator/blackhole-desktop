@@ -553,7 +553,7 @@ namespace BlackHole
         void StartDrift()
         {
             if (drift) return;
-            drift = true; lastDriftMs = 0;
+            drift = true; lastDriftMs = 0; driftLogged = false;
             if (taskbarFx && fx == null)
             {
                 try { TaskbarFx f = new TaskbarFx(); if (f.Start(cx, cy, shadow)) { fx = f; Log.Write("taskbar swallow started"); } }
@@ -600,13 +600,19 @@ namespace BlackHole
 
         void DriftStep(long now)
         {
-            if (!drift || dv == null || falling.Count > 0 || leftDown || upPending || rend == null) return;
+            if (!drift) return;
+            if (dv == null || falling.Count > 0 || leftDown || upPending || rend == null)
+            {
+                if (now - lastBlockLog > 3000) { lastBlockLog = now; Log.Write("swallow waiting: dv=" + (dv != null) + " falling=" + falling.Count + " leftDown=" + leftDown + " upPending=" + upPending + " rend=" + (rend != null)); }
+                return;
+            }
             if (now - lastDriftMs < 40) return; // ~25 moves per second: smooth
             double dts = (now - lastDriftMs) / 1000.0; lastDriftMs = now;
             if (dts > 0.25) dts = 0.04;
             if (dv.AutoArrange) return;
             SetSnap(true);
-            double speed = 90.0 * dpi, rmin = shadow * 0.3; // icons plunge into the shadow and are parked there (hidden), never deleted
+            if (!driftLogged) { driftLogged = true; Log.Write("swallow: icons moving (leftDown=" + leftDown + ", auto-arrange=" + dv.AutoArrange + ")"); }
+            double speed = 120.0 * dpi, rmin = shadow * 0.3; // icons plunge into the shadow and are parked there (hidden), never deleted
 
             // listing the desktop is the slow part: refresh it every 2 s, in between move the cached items
             if (driftCache == null || now - driftCacheMs > 2000)
@@ -640,7 +646,7 @@ namespace BlackHole
             }
             dv.SetPositions(ps, pts);
         }
-        List<DesktopItem> driftCache; long driftCacheMs;
+        List<DesktopItem> driftCache; long driftCacheMs; bool driftLogged; long lastBlockLog;
 
         IntPtr KeyProc(int code, IntPtr w, IntPtr l)
         {
@@ -738,6 +744,8 @@ namespace BlackHole
             float dt = (now - lastTick) / 1000f; lastTick = now;
             if (dt > 0.2f) dt = 0.2f;
 
+            // the mouse hook can miss a button-up; never let a stuck 'button down' freeze the swallow
+            if (leftDown && (Native.GetAsyncKeyState(1) & 0x8000) == 0) { leftDown = false; dragging = false; }
             if (needSnapshot)
             {
                 needSnapshot = false;
