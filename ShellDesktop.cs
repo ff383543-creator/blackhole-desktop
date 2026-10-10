@@ -138,9 +138,24 @@ namespace BlackHole
                 }
                 DesktopItem it = new DesktopItem();
                 it.Path = path; it.Pidl = pidl; it.X = pt.X; it.Y = pt.Y;
+                pidlIndex[pidl] = i;
                 list.Add(it);
             }
+            lv = Native.FindDesktopListView();
             return list;
+        }
+
+        // Moving icons with the list view's own message repaints at once, even with grid snapping off.
+        // (IFolderView::SelectAndPositionItems updated the stored positions but the screen kept the old layout.)
+        Dictionary<IntPtr, int> pidlIndex = new Dictionary<IntPtr, int>();
+        IntPtr lv;
+
+        bool MoveViaListView(IntPtr pidl, int x, int y)
+        {
+            int idx;
+            if (lv == IntPtr.Zero || !pidlIndex.TryGetValue(pidl, out idx)) return false;
+            Native.SendMessage(lv, 0x100F /*LVM_SETITEMPOSITION*/, new IntPtr(idx), new IntPtr((y << 16) | (x & 0xFFFF)));
+            return true;
         }
 
         public static void Free(List<DesktopItem> items)
@@ -152,6 +167,9 @@ namespace BlackHole
         public int SetPositions(List<IntPtr> pidls, List<PT> pts)
         {
             int n = pidls.Count; if (n == 0) return 0;
+            bool all = true;
+            for (int k = 0; k < n; k++) if (!MoveViaListView(pidls[k], pts[k].X, pts[k].Y)) all = false;
+            if (all) return 0;
             IntPtr pp = Marshal.AllocHGlobal(IntPtr.Size * n);
             IntPtr pt = Marshal.AllocHGlobal(8 * n);
             try
@@ -169,6 +187,7 @@ namespace BlackHole
 
         public void SetPosition(IntPtr pidl, int x, int y)
         {
+            if (MoveViaListView(pidl, x, y)) return;
             IntPtr pp = Marshal.AllocHGlobal(IntPtr.Size);
             IntPtr pt = Marshal.AllocHGlobal(8);
             try

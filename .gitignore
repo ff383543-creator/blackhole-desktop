@@ -3,3 +3,4 @@
 *.pdb
 patch*.py
 patch*.py
+lvtest/

@@ -455,6 +455,7 @@ namespace BlackHole
                     f.Ang0 = Math.Atan2(sy, sx); f.Rad0 = Math.Sqrt(sx * sx + sy * sy);
                     f.T0 = clock.ElapsedMilliseconds; f.Spin = 2.6 * Math.PI;
                     if (auto) { f.T0 -= 5000; } // can't animate: finish at once
+                    SetSnap(true); // free positioning while the icon falls
                     falling.Add(f);
                     keep.Add(it);
                 }
@@ -495,6 +496,7 @@ namespace BlackHole
                     falling.RemoveAt(i);
                 }
             }
+            if (falling.Count == 0 && !drift) SetSnap(false);
         }
 
         // ---------- swallow the whole desktop (icons drift in) ----------
@@ -887,6 +889,15 @@ namespace BlackHole
                 foreach (DesktopItem it in d.Items())
                     if (it.Path.EndsWith(a[pi + 1], StringComparison.OrdinalIgnoreCase))
                         d.SetPosition(it.Pidl, int.Parse(a[pi + 2]), int.Parse(a[pi + 3]));
+                return 0;
+            }
+            int shi = a.IndexOf("--shiftall");
+            if (shi >= 0)
+            {
+                DesktopView d = DesktopView.Open(); int sdx = int.Parse(a[shi + 1]), sdy = int.Parse(a[shi + 2]);
+                List<DesktopItem> its = d.Items(); List<IntPtr> pp = new List<IntPtr>(); List<PT> pt2 = new List<PT>();
+                foreach (DesktopItem it in its) { if (it.Path.StartsWith("::")) continue; PT np = new PT(); np.X = it.X + sdx; np.Y = it.Y + sdy; pp.Add(it.Pidl); pt2.Add(np); }
+                Console.WriteLine("hr=" + d.SetPositions(pp, pt2));
                 return 0;
             }
             if (a.Contains("--list"))
