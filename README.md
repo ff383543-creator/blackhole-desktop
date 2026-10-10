@@ -1,54 +1,56 @@
-# BlackHole — чёрная дыра вместо корзины на рабочем столе
+# BlackHole: a black hole instead of the Recycle Bin on your desktop
 
-Заменяет значок «Корзина» на анимированную чёрную дыру с гравитационной линзой:
-искажает обои, иконки и курсор вокруг себя, диск газа вращается.
-Файл, брошенный рядом с дырой, затягивается по спирали и уходит в **обычную корзину Windows** (его можно восстановить).
+**English** | [Русский](README.ru.md)
 
-Только Windows 10 (2004+) / Windows 11, x64. Без установщика, без зависимостей: собирается компилятором, который уже есть в Windows.
+Replaces the desktop "Recycle Bin" icon with an animated black hole with gravitational lensing:
+it bends the wallpaper, icons and mouse cursor around it, and a disk of gas swirls around the horizon.
+A file you drop near the hole is pulled in along a spiral and goes into the **normal Windows Recycle Bin**, so you can always restore it.
 
-## Установка
+Windows 10 (2004+) / Windows 11, x64 only. No installer and no dependencies: it is built with the C# compiler that already ships with Windows.
 
-1. Скачай или склонируй репозиторий в любую папку (например, `C:\Users\<ты>\BlackHole`).
-2. Запусти `build.cmd` (двойной клик). Появится `BlackHole.exe`.
-3. Запусти `BlackHole.exe`. В трее появится значок, на рабочем столе — дыра на месте бывшей корзины.
+## Install
 
-Автозапуск: правый клик по значку в трее → «Запускать вместе с Windows».
+1. Download or clone this repository into any folder (for example `C:\Users\<you>\BlackHole`).
+2. Run `build.cmd` (double-click). This produces `BlackHole.exe`.
+3. Run `BlackHole.exe`. A tray icon appears and the black hole shows up on the desktop where the Recycle Bin used to be.
 
-## Как пользоваться
+Start with Windows: right-click the tray icon, then "Запускать вместе с Windows" (Run at Windows startup).
 
-| Действие | Что происходит |
+## Usage
+
+| Action | What happens |
 |---|---|
-| Тащишь файл/ярлык к дыре | Дыра «голодает», курсор сам сползает к ней; можно вырваться |
-| Отпускаешь файл рядом с дырой (~2,4 радиуса тени) | Иконка по спирали затягивается и файл уходит в корзину |
-| Двойной клик по дыре | Открывает корзину |
-| Курсор приближается | Настоящая стрелка скрывается, вместо неё искажённая копия, которую «засасывает» |
-| Любое открытое окно | Дыра замирает и не потребляет ресурсов; оживает на чистом рабочем столе |
+| Drag a file or shortcut toward the hole | The hole "gets hungry" and your cursor is slowly tugged toward it; you can pull away |
+| Drop a file near the hole (within about 2.4 shadow radii) | The icon spirals in and the file is moved to the Recycle Bin |
+| Double-click the hole | Opens the Recycle Bin |
+| Move the cursor close to the hole | The real arrow is hidden and a distorted copy is drawn instead, swirling and shrinking into the hole |
+| Any open application window | The hole freezes and uses almost no CPU; it comes back to life on a clear desktop |
 
-Меню значка в трее: открыть корзину, очистить корзину (с подтверждением Windows), размер (крошечная / маленькая / обычная), переместить в позицию курсора (через 3 с), автозапуск, выход.
+Tray menu (labels are in Russian): open the Recycle Bin, empty the Recycle Bin (with the Windows confirmation), size (tiny / small / normal), move the hole to the cursor position (after 3 s), run at startup, quit.
 
-## Что программа меняет на компьютере
+## What it changes on your computer
 
-- Скрывает значок «Корзина» на рабочем столе (реестр `HKCU\...\Explorer\HideDesktopIcons`). При выходе через меню трея значок возвращается.
-- Пока курсор в зоне дыры, на время подменяет системные курсоры пустыми. Они возвращаются при выходе из зоны, при выходе из программы и при следующем запуске.
-- Настройки (позиция, размер) — в `%APPDATA%\BlackHole\settings.ini`.
-- Ставит глобальный хук мыши (нужен для двойного клика и для распознавания перетаскивания). Ничего не записывает и никуда не отправляет.
+- Hides the "Recycle Bin" desktop icon (registry `HKCU\...\Explorer\HideDesktopIcons`). Quitting from the tray menu brings the icon back.
+- While the cursor is inside the hole's zone, it temporarily replaces the system cursors with blank ones. They are restored when you leave the zone, when the app exits, and on the next start.
+- Settings (position, size) are stored in `%APPDATA%\BlackHole\settings.ini`.
+- Installs a global mouse hook (needed for the double-click and for detecting drags). It records nothing and sends nothing anywhere.
 
-## Если что-то пошло не так
+## If something goes wrong
 
-Запусти `restore.cmd`: он закроет программу, вернёт значок корзины и нормальные курсоры.
-Вручную: `BlackHole.exe --quit`, затем `BlackHole.exe --restore`.
+Run `restore.cmd`: it closes the app, brings back the Recycle Bin icon and the normal cursors.
+Manually: `BlackHole.exe --quit`, then `BlackHole.exe --restore`.
 
-Корзина без значка: можно открыть через значок в трее или двойным кликом по дыре.
+With the icon hidden you can still open the Recycle Bin from the tray icon or by double-clicking the hole.
 
-## Как это устроено
+## How it works
 
-- `Lens.cs` — трассировка лучей в метрике Шварцшильда (один раз при старте): отклонение, пересечения с диском, фотонное кольцо, эффект Доплера.
-- `Renderer.cs` — каждый кадр захватывает область экрана, искажает её по таблице линзы, рисует диск и выводит прозрачным окном (`UpdateLayeredWindow`). Окно исключено из захвата экрана и пропускает клики.
-- `ShellDesktop.cs` — чтение и перемещение иконок рабочего стола через COM `IFolderView`.
-- `Program.cs` — окно, трей, хуки мыши, логика «засасывания», пауза при открытых окнах.
+- `Lens.cs`: Schwarzschild ray tracing, done once at startup (light deflection, accretion disk crossings, photon ring, Doppler beaming).
+- `Renderer.cs`: every frame it grabs the screen region, warps it with the precomputed lens table, draws the disk and shows the result in a click-through layered window (`UpdateLayeredWindow`). The window is excluded from screen capture so it does not see itself.
+- `ShellDesktop.cs`: reads and moves desktop icons through the COM `IFolderView` interface.
+- `Program.cs`: window, tray, mouse hook, the "swallow" logic, and pausing when application windows are open.
 
-## Известные ограничения
+## Known limitations
 
-- Только основной монитор; дыра видна на рабочем столе, поверх неё окна приложений.
-- На других виртуальных рабочих столах Windows дыры нет.
-- При включённом «Автоматическом упорядочивании значков» анимация засасывания отключается (файл просто уходит в корзину).
+- Primary monitor only. The hole lives on the desktop; application windows are drawn above it.
+- Other Windows virtual desktops do not get a hole.
+- With "Auto arrange icons" enabled, the swallow animation is skipped (the file simply goes to the Recycle Bin).
