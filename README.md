@@ -10,6 +10,8 @@ Windows 10 (2004+) / Windows 11, x64 only. No installer and no dependencies: it 
 
 ## Install
 
+**Quick start:** a prebuilt `BlackHole.exe` is included in this repository. Download it (or the whole ZIP) and run it. If you prefer to build it yourself, follow the steps below.
+
 1. Download or clone this repository into any folder (for example `C:\Users\<you>\BlackHole`).
 2. Run `build.cmd` (double-click). This produces `BlackHole.exe`.
 3. Run `BlackHole.exe`. A tray icon appears and the black hole shows up on the desktop where the Recycle Bin used to be.

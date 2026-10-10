@@ -1,7 +1,8 @@
-*.exe
 *.png
 *.pdb
 patch*.py
 patch*.py
 lvtest/
 build_log.txt
+*.exe
+!BlackHole.exe
