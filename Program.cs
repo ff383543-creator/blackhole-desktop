@@ -254,6 +254,8 @@ namespace BlackHole
             tray.ContextMenu = m;
             tray.DoubleClick += delegate { OpenBin(); };
             tray.Visible = true;
+            tray.ShowBalloonTip(4000, "Чёрная дыра запущена",
+                "Она живёт на рабочем столе. Пока открыто любое окно, дыра замирает. Меню: значок в трее.", ToolTipIcon.Info);
             UpdateSizeChecks();
         }
 
@@ -557,7 +559,9 @@ namespace BlackHole
             SetCursorHidden(!covered && cdd < shadow * 3.0);
             rend.HideCursor = cursorHidden; rend.HoleX = cx; rend.HoleY = cy; rend.HoleShadow = shadow;
             rend.ArrowCursor = arrow; rend.ArrowHot = arrowHot;
-            if (covered && Environment.GetEnvironmentVariable("BH_FORCE") != "1") return;
+            // draw at least one frame even if windows are open; after that a covered hole stays frozen
+            if (covered && firstFrameDone && Environment.GetEnvironmentVariable("BH_FORCE") != "1") return;
+            firstFrameDone = true;
 
             int x0 = cx - rend.L.R, y0 = cy - rend.L.R;
             if (!frozen || needCapture) { rend.Capture(x0, y0); needCapture = false; }
@@ -577,7 +581,7 @@ namespace BlackHole
                 bmp.Save(selfcap, ImageFormat.Png);
             }
         }
-        bool selfcapDone;
+        bool selfcapDone, firstFrameDone;
 
         protected override void Dispose(bool disposing)
         {
@@ -627,7 +631,14 @@ namespace BlackHole
                 Thread.Sleep(3000);
             }
             Mutex m = new Mutex(true, "BlackHoleTrashSingleton", out created);
-            if (!created) return 0;
+            if (!created)
+            {
+                // another copy is running (maybe an older build): ask it to quit and take over
+                try { EventWaitHandle.OpenExisting("BlackHoleQuitEvent").Set(); } catch (Exception) { }
+                bool got = false;
+                try { got = m.WaitOne(6000); } catch (AbandonedMutexException) { got = true; }
+                if (!got) return 0;
+            }
             Application.EnableVisualStyles();
             Application.Run(new HoleApp());
             GC.KeepAlive(m);
