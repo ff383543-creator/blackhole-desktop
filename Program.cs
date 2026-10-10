@@ -522,12 +522,12 @@ namespace BlackHole
                 Native.SetWindowPos(form.Handle, Native.HWND_BOTTOM, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
                 if (dv == null) dv = DesktopView.Open();
             }
-            if (now - lastOccMs > 300) { lastOccMs = now; covered = IsCovered(); timer.Interval = covered ? 250 : 10; }
+            if (now - lastOccMs > 300) { lastOccMs = now; covered = IsCovered(); timer.Interval = covered ? 250 : 20; }
 
             if (rend == null) return;
 
             bool active = falling.Count > 0 || (leftDown && dragging) || rend.Hunger > 0.02f || rend.Flare > 0.02f;
-            long interval = active ? 16 : 50;
+            long interval = active ? 16 : 83; // ~12 fps when idle
             if (now - lastFrameMs < interval) return;
             float fdt = (now - lastFrameMs) / 1000f; lastFrameMs = now;
             if (fdt > 0.2f) fdt = 0.2f;
