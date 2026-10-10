@@ -106,6 +106,8 @@ namespace BlackHole
             kbProc = new HookProc(KeyProc);
             kbHook = Native.SetWindowsHookEx(13, kbProc, Native.GetModuleHandle(null), 0);
             LoadOrigins();
+            System.Windows.Forms.Timer keyTimer = new System.Windows.Forms.Timer();
+            keyTimer.Interval = 40; keyTimer.Tick += delegate { PollKeys(); }; keyTimer.Start();
             restorePending = origins.Count > 0; Log.Write("leftover icon origins: " + origins.Count); // icons left displaced by a previous session (e.g. reboot)
             SystemEvents.SessionEnding += delegate { try { form.Invoke(new MethodInvoker(StopDrift)); } catch (Exception) { } };
             Log.Write("mouse hook: " + (hook != IntPtr.Zero ? "ok" : "FAILED"));
@@ -642,6 +644,37 @@ namespace BlackHole
             Native.GetClassName(root, sb, 64);
             string c = sb.ToString();
             return c == "Progman" || c == "WorkerW";
+        }
+
+        static string ClassOf(IntPtr h)
+        {
+            if (h == IntPtr.Zero) return "(none)";
+            StringBuilder sb = new StringBuilder(64);
+            Native.GetClassName(Native.GetAncestor(h, 2) == IntPtr.Zero ? h : Native.GetAncestor(h, 2), sb, 64);
+            return sb.ToString();
+        }
+
+        static bool IsShellFocus(IntPtr h)
+        {
+            string c = ClassOf(h);
+            return c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd" || c == "XamlExplorerHostIslandWindow";
+        }
+
+        // keys O / P are polled (more reliable than a keyboard hook, which Windows drops if the app is busy)
+        bool oDown, pDown;
+        void PollKeys()
+        {
+            bool ctrl = (Native.GetAsyncKeyState(0x11) & 0x8000) != 0, alt = (Native.GetAsyncKeyState(0x12) & 0x8000) != 0;
+            bool o = (Native.GetAsyncKeyState(0x4F) & 0x8000) != 0, pk = (Native.GetAsyncKeyState(0x50) & 0x8000) != 0;
+            if ((o && !oDown) || (pk && !pDown))
+            {
+                IntPtr fg = Native.GetForegroundWindow();
+                string fc = ClassOf(fg);
+                bool ok = (ctrl && alt) || (!ctrl && !alt && (IsShellFocus(fg) || (!covered && fc != "Windows.UI.Core.CoreWindow" && fc != "ApplicationFrameWindow")));
+                Log.Write("key " + (o && !oDown ? "O" : "P") + " foreground=" + ClassOf(fg) + " -> " + (ok ? "accepted" : "ignored"));
+                if (ok) { if (o && !oDown) StartDrift(); else StopDrift(); }
+            }
+            oDown = o; pDown = pk;
         }
 
         // true when any ordinary app window overlaps the hole: then it is not drawn or animated at all

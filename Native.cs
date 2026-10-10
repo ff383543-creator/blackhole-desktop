@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -122,6 +122,8 @@ namespace BlackHole
         [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int idx);
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
         [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int val, int size);
+
+        [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vk);
 
         public static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
 
