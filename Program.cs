@@ -313,7 +313,7 @@ namespace BlackHole
                 using (RegistryKey k = Registry.CurrentUser.CreateSubKey(RunKey))
                 {
                     if (k.GetValue("BlackHole") != null) k.DeleteValue("BlackHole");
-                    else k.SetValue("BlackHole", "\"" + Application.ExecutablePath + "\"");
+                    else k.SetValue("BlackHole", "\"" + Application.ExecutablePath + "\" --autostart");
                 }
             }
             catch (Exception) { }
@@ -620,6 +620,12 @@ namespace BlackHole
             if (di >= 0) return Dump.Run(a, di);
 
             bool created;
+            if (a.Contains("--autostart"))
+            {
+                // at logon the shell may not be ready yet: wait for the desktop window
+                for (int i = 0; i < 120 && Native.FindWindow("Progman", null) == IntPtr.Zero; i++) Thread.Sleep(500);
+                Thread.Sleep(3000);
+            }
             Mutex m = new Mutex(true, "BlackHoleTrashSingleton", out created);
             if (!created) return 0;
             Application.EnableVisualStyles();
