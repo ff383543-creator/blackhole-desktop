@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -149,9 +149,9 @@ namespace BlackHole
             items.Clear();
         }
 
-        public void SetPositions(List<IntPtr> pidls, List<PT> pts)
+        public int SetPositions(List<IntPtr> pidls, List<PT> pts)
         {
-            int n = pidls.Count; if (n == 0) return;
+            int n = pidls.Count; if (n == 0) return 0;
             IntPtr pp = Marshal.AllocHGlobal(IntPtr.Size * n);
             IntPtr pt = Marshal.AllocHGlobal(8 * n);
             try
@@ -162,7 +162,7 @@ namespace BlackHole
                     Marshal.WriteInt32(pt, i * 8, pts[i].X);
                     Marshal.WriteInt32(pt, i * 8 + 4, pts[i].Y);
                 }
-                fv.SelectAndPositionItems((uint)n, pp, pt, 0x80);
+                return fv.SelectAndPositionItems((uint)n, pp, pt, 0x80);
             }
             finally { Marshal.FreeHGlobal(pp); Marshal.FreeHGlobal(pt); }
         }

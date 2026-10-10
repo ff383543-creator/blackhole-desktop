@@ -69,6 +69,10 @@ namespace BlackHole
         List<Falling> falling = new List<Falling>();
         long lastTick;
 
+        bool drift, snapOff, snapWasOn, snapKnown, restorePending; long lastDriftMs;
+        Dictionary<string, double[]> drifted = new Dictionary<string, double[]>();
+        Dictionary<string, PT> origins = new Dictionary<string, PT>();
+        HookProc kbProc; IntPtr kbHook;
         MenuItem miAuto;
         MenuItem[] miSize;
 
@@ -99,6 +103,11 @@ namespace BlackHole
 
             hookProc = new HookProc(MouseProc);
             hook = Native.SetWindowsHookEx(14, hookProc, Native.GetModuleHandle(null), 0);
+            kbProc = new HookProc(KeyProc);
+            kbHook = Native.SetWindowsHookEx(13, kbProc, Native.GetModuleHandle(null), 0);
+            LoadOrigins();
+            restorePending = origins.Count > 0; Log.Write("leftover icon origins: " + origins.Count); // icons left displaced by a previous session (e.g. reboot)
+            SystemEvents.SessionEnding += delegate { try { form.Invoke(new MethodInvoker(StopDrift)); } catch (Exception) { } };
             Log.Write("mouse hook: " + (hook != IntPtr.Zero ? "ok" : "FAILED"));
 
             timer = new System.Windows.Forms.Timer();
@@ -122,6 +131,17 @@ namespace BlackHole
             ThreadPool.RegisterWaitForSingleObject(evDrop, delegate(object st, bool to)
             {
                 try { form.BeginInvoke(new MethodInvoker(delegate { upPending = true; upAt = clock.ElapsedMilliseconds - 1000; })); } catch (Exception) { }
+            }, null, -1, false);
+
+            EventWaitHandle evSwallow = new EventWaitHandle(false, EventResetMode.AutoReset, "BlackHoleSwallow");
+            EventWaitHandle evStop = new EventWaitHandle(false, EventResetMode.AutoReset, "BlackHoleStop");
+            ThreadPool.RegisterWaitForSingleObject(evSwallow, delegate(object st, bool to)
+            {
+                try { form.BeginInvoke(new MethodInvoker(StartDrift)); } catch (Exception) { }
+            }, null, -1, false);
+            ThreadPool.RegisterWaitForSingleObject(evStop, delegate(object st, bool to)
+            {
+                try { form.BeginInvoke(new MethodInvoker(StopDrift)); } catch (Exception) { }
             }, null, -1, false);
 
             Rebuild();
@@ -253,6 +273,9 @@ namespace BlackHole
             m.MenuItems.Add("Переместить в позицию курсора (через 3 сек)", delegate { MoveHere(); });
             miAuto = new MenuItem("Запускать вместе с Windows", delegate { ToggleAutostart(); });
             m.MenuItems.Add(miAuto);
+            m.MenuItems.Add("Засосать весь рабочий стол (клавиша O)", delegate { StartDrift(); });
+            m.MenuItems.Add("Остановить и вернуть всё на места (клавиша P)", delegate { StopDrift(); });
+            m.MenuItems.Add("-");
             m.MenuItems.Add("Открыть журнал (для диагностики)", delegate { try { Process.Start("notepad.exe", Log.Path); } catch (Exception) { } });
             m.MenuItems.Add("-");
             m.MenuItems.Add("Выход (вернуть значок корзины)", delegate { Quit(); });
@@ -332,7 +355,9 @@ namespace BlackHole
             try { timer.Stop(); } catch (Exception) { }
             // put back anything still falling
             foreach (Falling f in falling) { try { if (dv != null) dv.SetPosition(f.Pidl, f.OrigX, f.OrigY); } catch (Exception) { } }
+            try { StopDrift(); } catch (Exception) { }
             SetCursorHidden(false);
+            if (kbHook != IntPtr.Zero) Native.UnhookWindowsHookEx(kbHook);
             if (hook != IntPtr.Zero) Native.UnhookWindowsHookEx(hook);
             tray.Visible = false; tray.Dispose();
             SetRecycleHidden(false);
@@ -463,6 +488,150 @@ namespace BlackHole
             }
         }
 
+        // ---------- swallow the whole desktop (icons drift in) ----------
+        string OriginsPath { get { return Path.Combine(DataDir, "origins.txt"); } }
+
+        void LoadOrigins()
+        {
+            try
+            {
+                foreach (string line in File.ReadAllLines(OriginsPath, Encoding.UTF8))
+                {
+                    if (line.StartsWith("#snap=")) { snapWasOn = line.EndsWith("1"); snapKnown = true; continue; }
+                    string[] q = line.Split('|');
+                    if (q.Length != 3) continue;
+                    PT pt = new PT(); pt.X = int.Parse(q[1]); pt.Y = int.Parse(q[2]);
+                    origins[q[0]] = pt;
+                }
+            }
+            catch (Exception) { }
+        }
+
+        void SaveOrigins()
+        {
+            try
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("#snap=" + (snapWasOn ? "1" : "0") + "\r\n");
+                foreach (KeyValuePair<string, PT> kv in origins) sb.Append(kv.Key + "|" + kv.Value.X + "|" + kv.Value.Y + "\r\n");
+                File.WriteAllText(OriginsPath, sb.ToString(), Encoding.UTF8);
+            }
+            catch (Exception) { }
+        }
+
+        void SetSnap(bool off)
+        {
+            IntPtr lv = Native.FindDesktopListView();
+            if (lv == IntPtr.Zero) return;
+            if (off && !snapOff)
+            {
+                if (!snapKnown)
+                {
+                    long st = (long)Native.SendMessage(lv, 0x1037, IntPtr.Zero, IntPtr.Zero);
+                    snapWasOn = (st & 0x00080000) != 0; snapKnown = true;
+                }
+                Native.SendMessage(lv, 0x1036, new IntPtr(0x00080000), IntPtr.Zero);
+                snapOff = true;
+            }
+            else if (!off && snapOff)
+            {
+                if (snapWasOn) Native.SendMessage(lv, 0x1036, new IntPtr(0x00080000), new IntPtr(0x00080000));
+                snapOff = false;
+            }
+            if (!off) snapKnown = false;
+        }
+
+        void StartDrift()
+        {
+            if (drift) return;
+            drift = true; lastDriftMs = 0;
+            Log.Write("swallow started");
+        }
+
+        void StopDrift()
+        {
+            if (!drift && origins.Count == 0) return;
+            drift = false;
+            try { RestoreOrigins(); } catch (Exception) { dv = null; }
+            if (rend != null) rend.Flare = 0.7f;
+            Log.Write("swallow stopped, icons restored");
+        }
+
+        // returns false when the desktop is not ready yet (no icons listed) so the caller can retry
+        bool RestoreOrigins()
+        {
+            if (dv == null) dv = DesktopView.Open();
+            if (dv == null) return false;
+            List<DesktopItem> items = dv.Items();
+            if (items.Count == 0 && origins.Count > 0) return false;
+            SetSnap(true);
+            List<IntPtr> ps = new List<IntPtr>(); List<PT> pts = new List<PT>();
+            foreach (DesktopItem it in items)
+            {
+                PT o;
+                if (origins.TryGetValue(it.Path, out o)) { ps.Add(it.Pidl); pts.Add(o); }
+            }
+            int rc = dv.SetPositions(ps, pts);
+            Log.Write("restore: " + ps.Count + " of " + origins.Count + " icons put back, hr=0x" + rc.ToString("X"));
+            DesktopView.Free(items);
+            SetSnap(false);
+            origins.Clear(); drifted.Clear();
+            try { File.Delete(OriginsPath); } catch (Exception) { }
+            return true;
+        }
+
+        int restoreTries; long lastRestoreMs;
+
+        void DriftStep(long now)
+        {
+            if (!drift || dv == null || falling.Count > 0 || leftDown || upPending || rend == null) return;
+            if (now - lastDriftMs < 250) return;
+            double dts = (now - lastDriftMs) / 1000.0; lastDriftMs = now;
+            if (dts > 1) dts = 0.25;
+            if (dv.AutoArrange) return;
+            SetSnap(true);
+            double speed = 30.0 * dpi, rmin = shadow * 1.9;
+            List<DesktopItem> items = dv.Items();
+            List<IntPtr> ps = new List<IntPtr>(); List<PT> pts = new List<PT>();
+            bool newOrigin = false;
+            foreach (DesktopItem it in items)
+            {
+                if (it.Path.StartsWith("::") || it.Path.Length <= 3) continue;
+                double fx = it.X, fy = it.Y;
+                double[] last;
+                if (drifted.TryGetValue(it.Path, out last) && Math.Abs(last[0] - it.X) <= 3 && Math.Abs(last[1] - it.Y) <= 3) { fx = last[0]; fy = last[1]; }
+                if (!origins.ContainsKey(it.Path)) { PT o = new PT(); o.X = it.X; o.Y = it.Y; origins[it.Path] = o; newOrigin = true; }
+                double dx = cx - (fx + dv.Spacing.X / 2.0), dy = cy - (fy + dv.Spacing.Y / 2.0);
+                double r = Math.Sqrt(dx * dx + dy * dy);
+                if (r <= rmin) continue;
+                double step = speed * dts * (1 + Math.Min(2.0, shadow * 4 / r));
+                double ux = dx / r, uy = dy / r;
+                double nx = fx + ux * step - uy * step * 0.35, ny = fy + uy * step + ux * step * 0.35;
+                drifted[it.Path] = new double[] { nx, ny };
+                PT np = new PT(); np.X = (int)Math.Round(nx); np.Y = (int)Math.Round(ny);
+                ps.Add(it.Pidl); pts.Add(np);
+            }
+            if (newOrigin) SaveOrigins(); // saved BEFORE moving so a crash or reboot can always restore
+            dv.SetPositions(ps, pts);
+            DesktopView.Free(items);
+        }
+
+        IntPtr KeyProc(int code, IntPtr w, IntPtr l)
+        {
+            if (code >= 0 && ((int)w == 0x100 || (int)w == 0x104))
+            {
+                int vk = System.Runtime.InteropServices.Marshal.ReadInt32(l);
+                if ((vk == 0x50 && (drift || origins.Count > 0)) || (vk == 0x4F && !drift))
+                {
+                    bool ctrl = Native.GetKeyState(0x11) < 0, alt = Native.GetKeyState(0x12) < 0;
+                    bool onDesktop = !ctrl && !alt && IsDesktopClass(Native.GetForegroundWindow());
+                    if (onDesktop || (ctrl && alt))
+                        try { form.BeginInvoke(new MethodInvoker(vk == 0x50 ? (MethodInvoker)StopDrift : (MethodInvoker)StartDrift)); } catch (Exception) { }
+                }
+            }
+            return Native.CallNextHookEx(kbHook, code, w, l);
+        }
+
         // ---------- main loop ----------
         static bool IsDesktopClass(IntPtr h)
         {
@@ -522,7 +691,15 @@ namespace BlackHole
                 upPending = false;
                 try { ProcessDrop(); } catch (Exception) { dv = null; }
             }
+            if (restorePending && now > 3000 && now - lastRestoreMs > 1500)
+            {
+                // after a reboot the shell may still be filling the desktop: retry until icons are listed
+                lastRestoreMs = now;
+                try { if (RestoreOrigins() || ++restoreTries >= 40) restorePending = false; }
+                catch (Exception ex) { Log.Write("restore failed: " + ex); dv = null; if (++restoreTries >= 40) restorePending = false; }
+            }
             if (falling.Count > 0) UpdateFalling();
+            try { DriftStep(now); } catch (Exception) { dv = null; }
 
             if (now - lastZMs > 700)
             {
@@ -632,6 +809,8 @@ namespace BlackHole
                 try { EventWaitHandle.OpenExisting("BlackHoleQuitEvent").Set(); } catch (Exception) { }
                 return 0;
             }
+            if (a.Contains("--swallow")) { try { EventWaitHandle.OpenExisting("BlackHoleSwallow").Set(); } catch (Exception) { } return 0; }
+            if (a.Contains("--stop")) { try { EventWaitHandle.OpenExisting("BlackHoleStop").Set(); } catch (Exception) { } return 0; }
             if (a.Contains("--snap")) { try { EventWaitHandle.OpenExisting("BlackHoleSnap").Set(); } catch (Exception) { } return 0; }
             if (a.Contains("--drop")) { try { EventWaitHandle.OpenExisting("BlackHoleDrop").Set(); } catch (Exception) { } return 0; }
             int pi = a.IndexOf("--place");
