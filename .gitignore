@@ -4,3 +4,4 @@
 patch*.py
 patch*.py
 lvtest/
+build_log.txt

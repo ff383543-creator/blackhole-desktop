@@ -44,6 +44,8 @@ Tray menu (labels are in Russian): open the Recycle Bin, empty the Recycle Bin (
 1. The hole only lives on a **clear desktop**: minimize or close all windows (Win+D). With any window open it freezes and is hidden under it.
 2. Look for the black-hole icon in the system tray (click the ^ arrow). Right-click it, then **Открыть журнал** (Open log), or open `%APPDATA%\BlackHole\log.txt`. It lists every startup step and any error; send it to the author.
 3. `build.cmd` builds and starts the program and stays open so you can read errors. It needs 64-bit Windows 10 (2004+) / 11.
+4. Downloaded the ZIP? **Extract it first** (right-click, Extract All) and run `build.cmd` from the extracted folder, not from inside the ZIP. If the build fails, it writes `build_log.txt`: send it to the author.
+5. Windows SmartScreen or an antivirus may warn about `BlackHole.exe` (an unsigned program that uses a mouse hook). Choose More info, Run anyway; the exe is built from the source in this repository on your own PC.
 
 ## If something goes wrong
 
